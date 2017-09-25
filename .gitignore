@@ -1,0 +1,10 @@
+.idea/
+checkpoint/
+data/
+
+__pycache__
+*.txt
+*.jpg
+*.png
+log
+

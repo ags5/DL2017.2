@@ -15,11 +15,12 @@ import argparse
 
 from models import *
 from utils import progress_bar
+from utils import *
 from torch.autograd import Variable
 
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
-parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
+parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 args = parser.parse_args()
 
@@ -61,23 +62,25 @@ if args.resume:
 else:
     print('==> Building model..')
     # net = VGG('VGG19')
-    net = ResNet18()
+    # net = ResNet18()
     # net = PreActResNet18()
     # net = GoogLeNet()
-    #net = DenseNet121()
+    # net = DenseNet121()
     # net = ResNeXt29_2x64d()
     # net = MobileNet()
     # net = DPN92()
     # net = ShuffleNetG2()
     # net = SENet18()
-
+    net = squeezenet.squeezenet1_0()
 if use_cuda:
     net.cuda()
     net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
     cudnn.benchmark = True
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+#optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=5e-4)
+
 
 # Training
 def train(epoch):
@@ -140,6 +143,9 @@ def test(epoch):
         best_acc = acc
 
 
-for epoch in range(start_epoch, start_epoch+200):
+print(torch_summarize(net))
+#test(1)
+for epoch in range(start_epoch, 100):
     train(epoch)
     test(epoch)
+

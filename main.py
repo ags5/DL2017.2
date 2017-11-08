@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
-
 import torchvision
 import torchvision.transforms as transforms
 
@@ -22,11 +21,27 @@ from torch.autograd import Variable
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--ngpu', default=1, type=int,
+                    help='number of GPUs to use for training')
+parser.add_argument('--gpu_id', default='0', type=str,
+                    help='id(s) for CUDA_VISIBLE_DEVICES')
+
 args = parser.parse_args()
+
+cudnn.benchmark = True
+
+print('parsed options:', vars(args))
+
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+torch.randn(8).cuda()
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+#epoch_step = json.loads(opt.epoch_step)
+
 
 use_cuda = torch.cuda.is_available()
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
+
 
 # Data
 print('==> Preparing data..')
@@ -61,7 +76,7 @@ if args.resume:
     start_epoch = checkpoint['epoch']
 else:
     print('==> Building model..')
-    # net = VGG('VGG19')
+    net = VGG('VGG19')
     # net = ResNet18()
     # net = PreActResNet18()
     # net = GoogLeNet()
@@ -71,7 +86,9 @@ else:
     # net = DPN92()
     # net = ShuffleNetG2()
     # net = SENet18()
-    net = squeezenet.squeezenet1_0()
+    # net = squeezenet.squeezenet1_0()
+    # net = alexnet()
+    # net = squeezemob.squeezenet1_0()
 if use_cuda:
     net.cuda()
     net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
@@ -79,7 +96,8 @@ if use_cuda:
 
 criterion = nn.CrossEntropyLoss()
 #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=5e-4)
+#optimizer = optim.Adam(net.parameters(), lr=args.lr) #, weight_decay=5e-4)
+optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
 
 
 # Training
@@ -106,6 +124,9 @@ def train(epoch):
 
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+    return train_loss/(batch_idx+1)
+
 
 def test(epoch):
     global best_acc
@@ -143,9 +164,28 @@ def test(epoch):
         best_acc = acc
 
 
-print(torch_summarize(net))
+if ~args.resume:
+    print(torch_summarize(net))
 #test(1)
-for epoch in range(start_epoch, 100):
-    train(epoch)
+
+loss = 0
+delta = 0
+drop = 0
+
+for epoch in range(200 - start_epoch):
+    oldloss = loss
+    loss = train(epoch)
     test(epoch)
+    lr = optimizer.param_groups[0]['lr']
+    if (oldloss-loss < 0.01)and(epoch!=0):
+        delta = delta+1
+        if delta==10:
+            optimizer.param_groups[0]['lr'] = lr*0.1
+            drop = drop + 1
+            delta = 0
+    else: delta = 0
+    if drop == 4:
+        print('The end')
+        print(lr, delta, drop, epoch)
+        break
 

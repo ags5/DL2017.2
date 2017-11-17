@@ -11,6 +11,7 @@ import torchvision.transforms as transforms
 
 import os
 import argparse
+import time
 
 from models import *
 from utils import progress_bar
@@ -99,6 +100,42 @@ criterion = nn.CrossEntropyLoss()
 #optimizer = optim.Adam(net.parameters(), lr=args.lr) #, weight_decay=5e-4)
 optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
 
+def format_time(seconds):
+    days = int(seconds / 3600/24)
+    seconds = seconds - days*3600*24
+    hours = int(seconds / 3600)
+    seconds = seconds - hours*3600
+    minutes = int(seconds / 60)
+    seconds = seconds - minutes*60
+    secondsf = int(seconds)
+    seconds = seconds - secondsf
+    millis = int(seconds*1000)
+    seconds = seconds - millis/1000
+    micros = int(seconds*1000000)
+
+    f = ''
+    i = 1
+    if days > 0:
+        f += str(days) + 'D'
+        i += 1
+    if hours > 0 and i <= 2:
+        f += str(hours) + 'h'
+        i += 1
+    if minutes > 0 and i <= 2:
+        f += str(minutes) + 'm'
+        i += 1
+    if secondsf > 0 and i <= 2:
+        f += str(secondsf) + 's'
+        i += 1
+    if millis > 0 and i <= 2:
+        f += str(millis) + 'ms'
+        i += 1
+    if micros > 0 and i <= 2:
+        f += str(micros) + 'us'
+        i += 1
+    if f == '':
+        f = '0ms'
+    return f
 
 # Training
 def train(epoch):
@@ -138,7 +175,9 @@ def test(epoch):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
+        initial_time = time.time()
         outputs = net(inputs)
+        final_time = time.time()
         loss = criterion(outputs, targets)
 
         test_loss += loss.data[0]
@@ -146,8 +185,14 @@ def test(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
 
+        time_passed = final_time - initial_time
+        with open("tempos.txt", mode = 'a') as filetime:
+            filetime.write('tempo: %s\n' % format_time(time_passed))
+
         progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+        #print('tempo batch%d: %s\n' % (batch_idx+1, format_time(time_passed)))
+
 
     # Save checkpoint.
     acc = 100.*correct/total
@@ -162,11 +207,12 @@ def test(epoch):
             os.mkdir('checkpoint')
         torch.save(state, './checkpoint/ckpt.t7')
         best_acc = acc
+    filetime.close()
 
 
 if ~args.resume:
     print(torch_summarize(net))
-#test(1)
+
 
 loss = 0
 delta = 0
@@ -175,6 +221,15 @@ drop = 0
 for epoch in range(200 - start_epoch):
     oldloss = loss
     loss = train(epoch)
+
+    print('Epoch Loss: %s' % loss)
+    with open("Loss.txt", mode = 'a') as fileloss:
+        if epoch == 0:
+            fileloss.write('EPOCH,LOSS')
+        fileloss.write('\n%d,%f' % (epoch,loss))
+        #fileloss.write('\n%s', % x)
+        #fileloss.write('%f' % loss)
+
     test(epoch)
     lr = optimizer.param_groups[0]['lr']
     if (oldloss-loss < 0.01)and(epoch!=0):
@@ -187,5 +242,8 @@ for epoch in range(200 - start_epoch):
     if drop == 4:
         print('The end')
         print(lr, delta, drop, epoch)
+        fileloss.close()
         break
+
+#test(1)
 

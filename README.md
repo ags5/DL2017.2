@@ -1,6 +1,6 @@
 # Train CIFAR10 with PyTorch
 
-I'm playing with [PyTorch](http://pytorch.org/) on the CIFAR10 dataset.
+I'm playing with [PyTorch](http://pytorch.org/) on the CIFAR10 dataset. --> this readme is out of date!
 
 ## Pros & cons
 Pros:

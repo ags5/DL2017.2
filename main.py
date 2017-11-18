@@ -79,9 +79,9 @@ if args.resume:
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
     if ~args.cpu:
-        checkpoint = torch.load('./checkpoint/ckptalex.t7')
+        checkpoint = torch.load('./checkpoint/ckpt.t7')
     else:
-        checkpoint = torch.load('./checkpoint/ckptalex.t7', map_location=lambda storage, loc: storage)
+        checkpoint = torch.load('./checkpoint/ckpt.t7', map_location=lambda storage, loc: storage)
     net = checkpoint['net']
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']

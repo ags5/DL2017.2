@@ -26,6 +26,8 @@ parser.add_argument('--ngpu', default=1, type=int,
                     help='number of GPUs to use for training')
 parser.add_argument('--gpu_id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
+parser.add_argument('--mode', '-m', action = 'store_true',
+                    help = 'test mode')
 
 args = parser.parse_args()
 
@@ -62,7 +64,10 @@ trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=2)
 
 testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
+if args.mode:
+    testloader = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=False, num_workers=2)
+else:
+    testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
@@ -77,7 +82,7 @@ if args.resume:
     start_epoch = checkpoint['epoch']
 else:
     print('==> Building model..')
-    net = VGG('VGG19')
+    # net = VGG('VGG19')
     # net = ResNet18()
     # net = PreActResNet18()
     # net = GoogLeNet()
@@ -88,7 +93,7 @@ else:
     # net = ShuffleNetG2()
     # net = SENet18()
     # net = squeezenet.squeezenet1_0()
-    # net = alexnet()
+    net = alexnet()
     # net = squeezemob.squeezenet1_0()
 if use_cuda:
     net.cuda()
@@ -99,6 +104,13 @@ criterion = nn.CrossEntropyLoss()
 #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
 #optimizer = optim.Adam(net.parameters(), lr=args.lr) #, weight_decay=5e-4)
 optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
+
+if args.mode:
+    with open("tempos.txt", mode = 'w') as filetime:
+        filetime.close()
+else:
+    with open("Loss.txt", mode = 'w') as fileloss:
+        fileloss.close()
 
 def format_time(seconds):
     days = int(seconds / 3600/24)
@@ -186,12 +198,14 @@ def test(epoch):
         correct += predicted.eq(targets.data).cpu().sum()
 
         time_passed = final_time - initial_time
-        with open("tempos.txt", mode = 'a') as filetime:
-            filetime.write('tempo: %s\n' % format_time(time_passed))
+
+        if args.mode:
+            with open("tempos.txt", mode = 'a') as filetime:
+                filetime.write('tempo: %s\n' % format_time(time_passed))
+                filetime.close()
 
         progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-        #print('tempo batch%d: %s\n' % (batch_idx+1, format_time(time_passed)))
 
 
     # Save checkpoint.
@@ -207,7 +221,6 @@ def test(epoch):
             os.mkdir('checkpoint')
         torch.save(state, './checkpoint/ckpt.t7')
         best_acc = acc
-    filetime.close()
 
 
 if ~args.resume:
@@ -218,32 +231,31 @@ loss = 0
 delta = 0
 drop = 0
 
-for epoch in range(200 - start_epoch):
-    oldloss = loss
-    loss = train(epoch)
+if args.mode:
+    test(1)
+else:
+    for epoch in range(200 - start_epoch):
+        oldloss = loss
+        loss = train(epoch)
 
-    print('Epoch Loss: %s' % loss)
-    with open("Loss.txt", mode = 'a') as fileloss:
-        if epoch == 0:
-            fileloss.write('EPOCH,LOSS')
-        fileloss.write('\n%d,%f' % (epoch,loss))
-        #fileloss.write('\n%s', % x)
-        #fileloss.write('%f' % loss)
+        print('Epoch Loss: %s' % loss)
+        with open("Loss.txt", mode = 'a') as fileloss:
+            if epoch == 0:
+                fileloss.write('EPOCH,LOSS,LR')
+            fileloss.write('\n%d,%f,%f' % (epoch,loss,optimizer.param_groups[0]['lr']))
 
-    test(epoch)
-    lr = optimizer.param_groups[0]['lr']
-    if (oldloss-loss < 0.01)and(epoch!=0):
-        delta = delta+1
-        if delta==10:
-            optimizer.param_groups[0]['lr'] = lr*0.1
-            drop = drop + 1
-            delta = 0
-    else: delta = 0
-    if drop == 4:
-        print('The end')
-        print(lr, delta, drop, epoch)
-        fileloss.close()
-        break
-
-#test(1)
+        test(epoch)
+        lr = optimizer.param_groups[0]['lr']
+        if (oldloss-loss < 0.01)and(epoch!=0):
+            delta = delta+1
+            if delta==10:
+                optimizer.param_groups[0]['lr'] = lr*0.1
+                drop = drop + 1
+                delta = 0
+        else: delta = 0
+        if drop == 4:
+            print('The end')
+            print(lr, delta, drop, epoch)
+            fileloss.close()
+            break
 

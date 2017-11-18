@@ -28,20 +28,22 @@ parser.add_argument('--gpu_id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--mode', '-m', action = 'store_true',
                     help = 'test mode')
+parser.add_argument('--cpu', '-c', action = 'store_true',
+                    help = 'use cpu for test')
 
 args = parser.parse_args()
 
 cudnn.benchmark = True
 
 print('parsed options:', vars(args))
+if ~args.cpu:
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+    torch.randn(8).cuda()
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    #epoch_step = json.loads(opt.epoch_step)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-torch.randn(8).cuda()
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
-#epoch_step = json.loads(opt.epoch_step)
 
-
-use_cuda = torch.cuda.is_available()
+    use_cuda = torch.cuda.is_available()
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
@@ -76,7 +78,10 @@ if args.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt.t7')
+    if ~args.cpu:
+        checkpoint = torch.load('./checkpoint/ckptalex.t7')
+    else:
+        checkpoint = torch.load('./checkpoint/ckptalex.t7', map_location=lambda storage, loc: storage)
     net = checkpoint['net']
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
@@ -93,17 +98,18 @@ else:
     # net = ShuffleNetG2()
     # net = SENet18()
     # net = squeezenet.squeezenet1_0()
-    net = alexnet()
-    # net = squeezemob.squeezenet1_0()
-if use_cuda:
-    net.cuda()
-    net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
-    cudnn.benchmark = True
+    # net = alexnet()
+    net = squeezemob.squeezenet1_0()
+if ~args.cpu:
+    if use_cuda:
+        net.cuda()
+        net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
+        cudnn.benchmark = True
 
 criterion = nn.CrossEntropyLoss()
 #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-#optimizer = optim.Adam(net.parameters(), lr=args.lr) #, weight_decay=5e-4)
-optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
+optimizer = optim.Adam(net.parameters(), lr=args.lr) #, weight_decay=5e-4)
+#optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
 
 if args.mode:
     with open("tempos.txt", mode = 'w') as filetime:
@@ -184,8 +190,9 @@ def test(epoch):
     correct = 0
     total = 0
     for batch_idx, (inputs, targets) in enumerate(testloader):
-        if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
+        if ~args.cpu:
+            if use_cuda:
+                inputs, targets = inputs.cuda(), targets.cuda()
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
         initial_time = time.time()
         outputs = net(inputs)

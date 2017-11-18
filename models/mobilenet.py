@@ -6,6 +6,7 @@ for more details.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from collections import OrderedDict
 
 from torch.autograd import Variable
 
@@ -14,15 +15,20 @@ class Block(nn.Module):
     '''Depthwise conv + Pointwise conv'''
     def __init__(self, in_planes, out_planes, stride=1):
         super(Block, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, in_planes, kernel_size=3, stride=stride, padding=1, groups=in_planes, bias=False)
-        self.bn1 = nn.BatchNorm2d(in_planes)
-        self.conv2 = nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_planes)
+        self.Block = nn.Sequential(
+            OrderedDict([
+                ('Depthwise', nn.Conv2d(in_planes, in_planes, kernel_size=3, stride=stride, padding=1, groups=in_planes, bias=False)),
+                ('BatchNorm', nn.BatchNorm2d(in_planes)),
+                ('_activation', nn.ReLU(inplace=True)),
+                ('Pointwise', nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False)),
+                ('BatchNorm2', nn.BatchNorm2d(out_planes)),
+                ('_activation2', nn.ReLU(inplace=True))
+            ])
+        )
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        return out
+        out1 = self.Block(x)
+        return out1
 
 
 class MobileNet(nn.Module):
@@ -31,8 +37,10 @@ class MobileNet(nn.Module):
 
     def __init__(self, num_classes=10):
         super(MobileNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
+
+        self.layer1 = nn.Sequential(nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False),
+        				nn.BatchNorm2d(32),
+        				nn.ReLU(inplace=True))
         self.layers = self._make_layers(in_planes=32)
         self.linear = nn.Linear(1024, num_classes)
 
@@ -41,12 +49,14 @@ class MobileNet(nn.Module):
         for x in self.cfg:
             out_planes = x if isinstance(x, int) else x[0]
             stride = 1 if isinstance(x, int) else x[1]
-            layers.append(Block(in_planes, out_planes, stride))
+            layers += [Block(in_planes, out_planes, stride)]
             in_planes = out_planes
+
+        #layers += [nn.AvgPool2d(in_planes,2)]
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.layer1(x)
         out = self.layers(out)
         out = F.avg_pool2d(out, 2)
         out = out.view(out.size(0), -1)

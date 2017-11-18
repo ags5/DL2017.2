@@ -11,3 +11,4 @@ from .shufflenet import *
 from .preact_resnet import *
 from .squeezenet import *
 from .alexnet import *
+from .squeezemob import*

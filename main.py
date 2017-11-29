@@ -33,17 +33,16 @@ parser.add_argument('--cpu', '-c', action = 'store_true',
 
 args = parser.parse_args()
 
-cudnn.benchmark = True
 
 print('parsed options:', vars(args))
-if ~args.cpu:
+if not args.cpu:
+    cudnn.benchmark = True
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
     torch.randn(8).cuda()
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     #epoch_step = json.loads(opt.epoch_step)
-
-
     use_cuda = torch.cuda.is_available()
+
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
@@ -78,10 +77,11 @@ if args.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    if ~args.cpu:
+    if not args.cpu:
         checkpoint = torch.load('./checkpoint/ckpt.t7')
     else:
         checkpoint = torch.load('./checkpoint/ckpt.t7', map_location=lambda storage, loc: storage)
+
     net = checkpoint['net']
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
@@ -100,11 +100,13 @@ else:
     # net = squeezenet.squeezenet1_0()
     # net = alexnet()
     net = squeezemob.squeezenet1_0()
-if ~args.cpu:
+if not args.cpu:
     if use_cuda:
         net.cuda()
         net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
         cudnn.benchmark = True
+else:
+    net.cpu()
 
 criterion = nn.CrossEntropyLoss()
 #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
@@ -119,38 +121,39 @@ else:
         fileloss.close()
 
 def format_time(seconds):
-    days = int(seconds / 3600/24)
-    seconds = seconds - days*3600*24
-    hours = int(seconds / 3600)
-    seconds = seconds - hours*3600
-    minutes = int(seconds / 60)
-    seconds = seconds - minutes*60
-    secondsf = int(seconds)
-    seconds = seconds - secondsf
-    millis = int(seconds*1000)
-    seconds = seconds - millis/1000
+#    days = int(seconds / 3600/24)
+#    seconds = seconds - days*3600*24
+#    hours = int(seconds / 3600)
+#    seconds = seconds - hours*3600
+#    minutes = int(seconds / 60)
+#    seconds = seconds - minutes*60
+#    secondsf = int(seconds)
+#    seconds = seconds - secondsf
+#    millis = int(seconds*1000)
+#    seconds = seconds - millis/1000
     micros = int(seconds*1000000)
 
     f = ''
     i = 1
-    if days > 0:
-        f += str(days) + 'D'
-        i += 1
-    if hours > 0 and i <= 2:
-        f += str(hours) + 'h'
-        i += 1
-    if minutes > 0 and i <= 2:
-        f += str(minutes) + 'm'
-        i += 1
-    if secondsf > 0 and i <= 2:
-        f += str(secondsf) + 's'
-        i += 1
-    if millis > 0 and i <= 2:
-        f += str(millis) + 'ms'
-        i += 1
+#    if days > 0:
+#        f += str(days) + 'D'
+#        i += 1
+#    if hours > 0 and i <= 2:
+#        f += str(hours) + 'h'
+#        i += 1
+#    if minutes > 0 and i <= 2:
+#        f += str(minutes) + 'm'
+#        i += 1
+#    if secondsf > 0 and i <= 2:
+#        f += str(secondsf) + 's'
+#        i += 1
+#    if millis > 0 and i <= 2:
+#        f += str(millis) + 'ms'
+#        i += 1
     if micros > 0 and i <= 2:
-        f += str(micros) + 'us'
-        i += 1
+#        f += str(micros) + 'us'
+         f += str(micros)
+         i += 1
     if f == '':
         f = '0ms'
     return f
@@ -165,6 +168,8 @@ def train(epoch):
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
+        else:
+            inputs, targets = inputs.cpu(), targets.cpu()
         optimizer.zero_grad()
         inputs, targets = Variable(inputs), Variable(targets)
         outputs = net(inputs)
@@ -190,9 +195,11 @@ def test(epoch):
     correct = 0
     total = 0
     for batch_idx, (inputs, targets) in enumerate(testloader):
-        if ~args.cpu:
+        if not args.cpu:
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
+        else:
+            inputs, targets = inputs.cpu(), targets.cpu()
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
         initial_time = time.time()
         outputs = net(inputs)
@@ -208,29 +215,28 @@ def test(epoch):
 
         if args.mode:
             with open("tempos.txt", mode = 'a') as filetime:
-                filetime.write('tempo: %s\n' % format_time(time_passed))
+                filetime.write('\n%s' % format_time(time_passed))
                 filetime.close()
 
         progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+        if not args.mode:
+            # Save checkpoint.
+            acc = 100.*correct/total
+            if acc > best_acc:
+                print('Saving..')
+                state = {
+                    'net': net.module if use_cuda else net,
+                    'acc': acc,
+                    'epoch': epoch,
+                }
+                if not os.path.isdir('checkpoint'):
+                    os.mkdir('checkpoint')
+                torch.save(state, './checkpoint/ckpt.t7')
+                best_acc = acc
 
 
-    # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.module if use_cuda else net,
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.t7')
-        best_acc = acc
-
-
-if ~args.resume:
+if args.resume:
     print(torch_summarize(net))
 
 
